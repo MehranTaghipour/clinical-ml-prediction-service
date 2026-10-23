@@ -4,6 +4,7 @@ from typing import Any
 from fastapi import Depends, FastAPI
 from pydantic import BaseModel, Field
 
+from .prediction_repository import save_prediction
 from .predict import load_artifact, predict
 
 
@@ -26,6 +27,7 @@ class PredictionRequest(BaseModel):
 
 
 class PredictionResponse(BaseModel):
+    prediction_id: int = Field(gt=0)
     diagnosis: str
     confidence: float = Field(ge=0.0, le=1.0)
 
@@ -47,10 +49,21 @@ def create_prediction(
     request: PredictionRequest,
     artifact: dict[str, Any] = Depends(get_artifact),
 ) -> PredictionResponse:
-    """Generate a breast-cancer prediction."""
+    """Generate and store a breast-cancer prediction."""
     result = predict(request.features, artifact)
 
+    diagnosis = str(result["diagnosis"])
+    confidence = float(result["confidence"])
+
+    prediction_id = save_prediction(
+        model_version=app.version,
+        features=request.features,
+        diagnosis=diagnosis,
+        confidence=confidence,
+    )
+
     return PredictionResponse(
-        diagnosis=str(result["diagnosis"]),
-        confidence=float(result["confidence"]),
+        prediction_id=prediction_id,
+        diagnosis=diagnosis,
+        confidence=confidence,
     )
