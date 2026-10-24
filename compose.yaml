@@ -1,0 +1,36 @@
+services:
+  database:
+    image: postgres:17
+    environment:
+      POSTGRES_DB: clinical_ml
+      POSTGRES_USER: clinical_ml_app
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./sql/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - pg_isready -U clinical_ml_app -d clinical_ml
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: .
+    image: clinical-ml-api:0.1.0
+    environment:
+      DB_HOST: database
+      DB_PORT: "5432"
+      DB_NAME: clinical_ml
+      DB_USER: clinical_ml_app
+      DB_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "8000:8000"
+    depends_on:
+      database:
+        condition: service_healthy
+
+volumes:
+  postgres_data:
