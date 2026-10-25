@@ -37,4 +37,9 @@ jobs:
         run: python -m pytest
 
       - name: Build Docker image
-        run: docker build --tag clinical-ml-api:ci .
+        run: >
+          docker build
+          --platform linux/amd64
+          --provenance=false
+          --tag clinical-ml-api:ci
+          .
