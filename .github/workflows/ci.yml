@@ -1,4 +1,4 @@
-name: CI
+name: CI/CD
 
 on:
   push:
@@ -10,6 +10,14 @@ on:
 
 permissions:
   contents: read
+
+env:
+  AWS_REGION: eu-west-2
+  ECR_REPOSITORY: clinical-ml-prediction-service
+  ECS_CLUSTER: clinical-ml-cluster
+  ECS_SERVICE: clinical-ml-api-service
+  ECS_TASK_DEFINITION_FAMILY: clinical-ml-api
+  ECS_CONTAINER_NAME: clinical-ml-api
 
 jobs:
   test:
@@ -43,3 +51,72 @@ jobs:
           --provenance=false
           --tag clinical-ml-api:ci
           .
+
+  deploy:
+    if: github.event_name == 'push'
+    needs: test
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          role-session-name: clinical-ml-cd-${{ github.run_id }}
+          aws-region: ${{ env.AWS_REGION }}
+          mask-aws-account-id: "true"
+
+      - name: Log in to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2.1.7
+        with:
+          mask-password: "true"
+
+      - name: Build and push Docker image
+        id: build-image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          IMAGE_URI="${ECR_REGISTRY}/${ECR_REPOSITORY}:${IMAGE_TAG}"
+
+          docker build \
+            --platform linux/amd64 \
+            --provenance=false \
+            --tag "${IMAGE_URI}" \
+            .
+
+          docker push "${IMAGE_URI}"
+
+          echo "image=${IMAGE_URI}" >> "${GITHUB_OUTPUT}"
+
+      - name: Download current ECS task definition
+        run: |
+          aws ecs describe-task-definition \
+            --task-definition "${ECS_TASK_DEFINITION_FAMILY}" \
+            --query taskDefinition \
+            > task-definition.json
+
+      - name: Render new ECS task definition
+        id: render-task-definition
+        uses: aws-actions/amazon-ecs-render-task-definition@v1.9.0
+        with:
+          task-definition: task-definition.json
+          container-name: ${{ env.ECS_CONTAINER_NAME }}
+          image: ${{ steps.build-image.outputs.image }}
+
+      - name: Deploy to Amazon ECS
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2.6.4
+        with:
+          task-definition: ${{ steps.render-task-definition.outputs.task-definition }}
+          service: ${{ env.ECS_SERVICE }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          wait-for-service-stability: true
+          wait-max-delay-seconds: 15
