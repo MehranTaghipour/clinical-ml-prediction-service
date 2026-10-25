@@ -11,6 +11,7 @@ COPY requirements.txt .
 RUN python -m pip install --no-cache-dir -r requirements.txt
 
 COPY src ./src
+COPY sql ./sql
 
 RUN mkdir -p artifacts && python ./src/clinical_ml/train.py
 

@@ -19,7 +19,7 @@ services:
   api:
     build:
       context: .
-    image: clinical-ml-api:0.1.0
+    image: clinical-ml-api:0.1.1
     environment:
       DB_HOST: database
       DB_PORT: "5432"
